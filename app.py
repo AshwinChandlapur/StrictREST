@@ -1,8 +1,10 @@
-from flask import Flask,render_template,redirect,request,jsonify,g
+from flask import Flask,render_template,redirect,request,jsonify,g,make_response
 from flask_sqlalchemy import SQLAlchemy
 import uuid
 from werkzeug.security import generate_password_hash,check_password_hash
 import Users
+import jwt
+import datetime
 
 
 app = Flask(__name__)
@@ -38,6 +40,7 @@ def createUser():
     adminStatus = userDetails['admin']
 
     new_user = Users.User(public_id=str(uuid.uuid4()),name=userDetails["name"],password=hashedPassword,admin=adminStatus)
+    current_db_sessions = dbsession.object_session(new_user)
     dbsession.add(new_user)
     db_sqlite.create_all()
     dbsession.commit()
@@ -51,7 +54,6 @@ def promote_user (public_id):
     if user:
         user.admin = 1
         current_db_sessions = dbsession.object_session(user)
-
         dbsession.commit()
         current_db_sessions.commit()
         return jsonify({"message":"Privileges Updated"})
@@ -70,6 +72,23 @@ def delete_user(public_id):
         return jsonify({"message":"Deleted User Succesfullt"})
     else:
         return jsonify({"message":"Delete a User Failed"})
+
+@app.route("/login")
+def login():
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        return make_response("Could Not Verify, Should Sign in",401,{'WWW-Authenticate':'Basic realm="Login Require"'})
+
+    user = Users.User.query.filter_by(name = auth.username).first()
+
+    if not user:
+        return make_response("Could Not Verify,No user", 401, {'WWW-Authenticate': 'Basic realm="Login Require"'})
+
+    if check_password_hash(user.password,auth.password):
+        token = jwt.encode({'publid_id':user.public_id,'exp':datetime.datetime.utcnow()+datetime.timedelta(minutes=30)},app.config['SECRET_KEY'])
+        return jsonify({"token":token.decode("UTF-8")})
+
+    return make_response("Could Not Verify, No data", 401, {'WWW-Authenticate': 'Basic realm="Incorrect Password"'})
 
 @app.route("/")
 def home():
