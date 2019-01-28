@@ -12,11 +12,15 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://///Users/ashwinchandlapur/Desk
 
 
 db_sqlite  = SQLAlchemy(app)
-
+dbsession = db_sqlite.session
 
 @app.route("/user",methods=['GET'])
 def get_all_users():
-    return "Should return all users"
+    allUsers = Users.User.query.all();
+    list = []
+    for user in allUsers:
+        list.append(user.public_id)
+    return jsonify({"users":list})
 
 # Here user_id is dynamic.
 @app.route("/user/<public_id>",methods=['GET'])
@@ -25,28 +29,47 @@ def get_one_users(public_id):
     if not user:
         return jsonify({'message':"No User Found"})
     else:
-        return jsonify({'message':user.name})
+        return jsonify({'username':user.name})
 
 @app.route("/user",methods=['POST'])
 def createUser():
     userDetails = request.get_json()
     hashedPassword = str(generate_password_hash(userDetails["password"],method='sha256'))
+    adminStatus = userDetails['admin']
 
-    new_user = Users.User(public_id=str(uuid.uuid4()),name=userDetails["name"],password=hashedPassword,admin=True)
-    db_sqlite.session.add(new_user)
+    new_user = Users.User(public_id=str(uuid.uuid4()),name=userDetails["name"],password=hashedPassword,admin=adminStatus)
+    dbsession.add(new_user)
     db_sqlite.create_all()
-    db_sqlite.session.commit()
+    dbsession.commit()
 
     return jsonify({'message':'New User Created'})
 
 # Here user_id is dynamic.
-@app.route("/user/<user_id>",methods=['PUT'])
-def promote_user ():
-    return "Promote User to Admin"
+@app.route("/user/<public_id>",methods=['PUT'])
+def promote_user (public_id):
+    user = Users.User.query.filter_by(public_id = public_id).first()
+    if user:
+        user.admin = 1
+        current_db_sessions = dbsession.object_session(user)
 
-@app.route("/user/<user_id>", methods = ['DELETE'])
-def delete_user():
-    return "Delete a User"
+        dbsession.commit()
+        current_db_sessions.commit()
+        return jsonify({"message":"Privileges Updated"})
+    else:
+        return jsonify({"message":"No Such Users"})
+
+@app.route("/user/<public_id>", methods = ['DELETE'])
+def delete_user(public_id):
+    user = Users.User.query.filter_by(public_id = public_id).first()
+    if user:
+        current_db_sessions = dbsession.object_session(user)
+        current_db_sessions.delete(user)
+        dbsession.commit()
+        current_db_sessions.commit()
+        dbsession.flush
+        return jsonify({"message":"Deleted User Succesfullt"})
+    else:
+        return jsonify({"message":"Delete a User Failed"})
 
 @app.route("/")
 def home():
